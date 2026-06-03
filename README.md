@@ -5,24 +5,6 @@ Cada caso é independente, fácil de modificar e reutilizar.
 
 ---
 
-## 📁 Estrutura do Projeto
-
-```
-Projeto-Estatistica/
-│
-├── casos/
-│   ├── __init__.py               # Torna a pasta um módulo Python
-│   ├── caso1_z_medias.py         # Teste Z — duas médias (σ conhecidas)
-│   ├── caso2_t_pooled.py         # Teste t — variâncias iguais (pooled)
-│   ├── caso3_t_welch.py          # Teste t de Welch — variâncias diferentes
-│   └── caso4_z_proporcoes.py     # Teste Z — duas proporções
-│
-├── Testehipoteses.py             # Arquivo principal — rode este
-├── README.md                     # Este arquivo
-└── requirements.txt              # Dependências
-```
-
----
 
 ## 🧪 Casos cobertos
 
@@ -49,20 +31,8 @@ Ou, se tiver um `requirements.txt`:
 python -m pip install -r requirements.txt
 ```
 
-### 2. Edite os dados no arquivo principal
 
-Abra `Testehipoteses.py` e altere os valores na chamada de cada função:
-
-```python
-teste_t_pooled(
-    n1=30,  media1=72, s1=8,    # <- Grupo 1
-    n2=35,  media2=68, s2=10,   # <- Grupo 2
-    alpha=0.05,                  # <- Nível de significância
-    bilateral=True,              # <- True = bilateral | False = unilateral
-)
-```
-
-### 3. Execute
+### 2. Execute
 
 ```bash
 python Testehipoteses.py

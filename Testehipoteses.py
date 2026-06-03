@@ -62,19 +62,3 @@ if __name__ == "__main__":
         alpha=0.05,
         bilateral=True,
     )
-
-    # ── Caso 3: t de Welch (variâncias diferentes) ────────────────
-    teste_t_welch(
-        n1=30,  media1=72, s1=8,
-        n2=35,  media2=68, s2=10,
-        alpha=0.05,
-        bilateral=True,
-    )
-
-    # ── Caso 4: Z para proporções ─────────────────────────────────
-    teste_z_duas_proporcoes(
-        x1=40, n1=60,   # Turma A: 40 aprovados em 60
-        x2=50, n2=80,   # Turma B: 50 aprovados em 80
-        alpha=0.05,
-        bilateral=True,
-    )
