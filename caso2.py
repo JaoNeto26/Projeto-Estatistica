@@ -1,4 +1,4 @@
-from Testehipoteses import separador, linha, decisao
+from util import separador, linha, decisao
 import math
 from scipy import stats
 # ─────────────────────────────────────────────
@@ -26,13 +26,17 @@ def teste_t_pooled(
     print("\n  H₀: μ₁ = μ₂")
     print("  H₁: μ₁ ≠ μ₂" if bilateral else "  H₁: μ₁ > μ₂")
 
+    # Cálculo do t usando variância pooled
     gl = n1 + n2 - 2
     sp2 = ((n1 - 1) * s1**2 + (n2 - 1) * s2**2) / gl
     sp  = math.sqrt(sp2)
     t   = (media1 - media2) / (sp * math.sqrt(1/n1 + 1/n2))
 
+    # Decisão
     alpha_ref = alpha / 2 if bilateral else alpha
+    # Para teste bilateral, o valor crítico é simétrico (±t), para unilateral é apenas positivo
     t_critico = stats.t.ppf(1 - alpha_ref, df=gl)
+    # O p-valor é a probabilidade de obter um resultado tão extremo quanto o observado, sob H₀
     p_valor   = 2 * (1 - stats.t.cdf(abs(t), df=gl)) if bilateral else 1 - stats.t.cdf(t, df=gl)
 
     print(f"\n  Graus de liberdade   = {gl}")

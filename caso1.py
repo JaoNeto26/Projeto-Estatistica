@@ -1,4 +1,4 @@
-from Testehipoteses import separador, linha, decisao
+from util import separador, linha, decisao
 import math
 from scipy import stats
 # ─────────────────────────────────────────────
@@ -11,6 +11,7 @@ def teste_z_duas_medias(
     n2: int,   media2: float, sigma2: float,
     alpha: float = 0.05,
     bilateral: bool = True,
+
 ): 
     separador("CASO 1 — Teste Z: igualdade de duas médias (σ conhecidas)")
 
@@ -32,8 +33,11 @@ def teste_z_duas_medias(
     erro_padrao = math.sqrt(sigma1**2 / n1 + sigma2**2 / n2)
     z = (media1 - media2) / erro_padrao
 
+    # ── Decisão ──
     alpha_ref = alpha / 2 if bilateral else alpha
+    # Para teste bilateral, o valor crítico é simétrico (±z), para unilateral é apenas positivo
     z_critico = stats.norm.ppf(1 - alpha_ref)
+    # O p-valor é a probabilidade de obter um resultado tão extremo quanto o observado, sob H₀
     p_valor = 2 * (1 - stats.norm.cdf(abs(z))) if bilateral else 1 - stats.norm.cdf(z)
 
     print(f"\n  Erro-padrão          = {erro_padrao:.4f}")
