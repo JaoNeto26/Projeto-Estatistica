@@ -8,11 +8,14 @@ Casos cobertos:
   4. Teste Z  — igualdade de duas proporções
 
 """
-
-from caso1 import teste_z_duas_medias
-from caso2 import teste_t_pooled
-from caso3 import teste_t_welch
-from caso4 import teste_z_duas_proporcoes
+from Casos.caso1 import teste_z_duas_medias
+from Casos.caso2 import teste_t_pooled
+from Casos.caso3 import teste_t_welch
+from Casos.caso4 import teste_z_duas_proporcoes
+from graficos.grafico_caso1 import plotar_caso1
+from graficos.grafico_caso2 import plotar_caso2
+from graficos.grafico_caso3 import plotar_caso3
+from graficos.grafico_caso4 import plotar_caso4
 import math
 from scipy import stats
 
@@ -101,6 +104,14 @@ if __name__ == "__main__":
                 alpha=alpha,
                 bilateral=bilateral,
             )
+            plotar_caso1(
+                n1=n1,  media1=media1, sigma1=sigma1,
+                n2=n2,  media2=media2, sigma2=sigma2,
+                alpha=alpha,
+                bilateral=bilateral,
+                salvar=False,           # True para salvar como imagem
+                nome_arquivo="caso1_z_medias.png",
+            )
         elif opcao == 2:
             # ── Caso 2: t pooled (variâncias iguais) ──────────────────────
             print("\nCASO 2 - Teste t pooled")
@@ -132,6 +143,14 @@ if __name__ == "__main__":
                 s2=s2,
                 alpha=alpha,
                 bilateral=bilateral,
+            )
+            plotar_caso2(
+                n1=n1,  media1=media1, s1=s1,
+                n2=n2,  media2=media2, s2=s2,
+                alpha=alpha,
+                bilateral=bilateral,
+                salvar=False,
+                nome_arquivo="caso2_t_pooled.png",
             )
         elif opcao == 3:
             # ── Caso 3: t de Welch (variâncias diferentes) ────────────────
@@ -165,6 +184,14 @@ if __name__ == "__main__":
                 alpha=alpha,
                 bilateral=bilateral,
             )
+            plotar_caso3(
+                n1=n1,  media1=media1, s1=s1,
+                n2=n2,  media2=media2, s2=s2,
+                alpha=alpha,
+                bilateral=bilateral,
+                salvar=False,
+                nome_arquivo="caso3_t_welch.png",
+            )
         elif opcao == 4:
             # ── Caso 4: Z para proporções ─────────────────────────────────
             print("\nCASO 4 - Teste Z para duas proporções")
@@ -192,6 +219,16 @@ if __name__ == "__main__":
                 n2=n2,
                 alpha=alpha,
                 bilateral=bilateral,
+            )
+            plotar_caso4(
+                x1=x1,
+                n1=n1,
+                x2=x2,
+                n2=n2,
+                alpha=alpha,
+                bilateral=bilateral,
+                salvar=False,
+                nome_arquivo="caso4_z_proporcoes.png",
             )
         elif opcao == 0:
             break
