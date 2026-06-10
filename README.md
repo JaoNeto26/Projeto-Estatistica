@@ -23,22 +23,18 @@ Cada caso é independente, fácil de modificar e reutilizar.
 
 ```bash
 python -m pip install scipy
+python -m pip install matplotlib
 ```
 
-Ou, se tiver um `requirements.txt`:
-
-```bash
-python -m pip install -r requirements.txt
-```
 
 
 ### 2. Execute
 
 ```bash
-python Testehipoteses.py
+python Interface.py
 ```
 
-O terminal mostrará o passo a passo completo de cada teste: hipóteses, estatística calculada, valor crítico, p-valor e conclusão.
+O programa mostrará o passo a passo completo de cada teste: hipóteses, estatística calculada, valor crítico, p-valor e conclusão.
 
 ---
 
@@ -81,6 +77,7 @@ O terminal mostrará o passo a passo completo de cada teste: hipóteses, estatí
 
 - Python 3.8+
 - [scipy](https://scipy.org/) — cálculo de distribuições t e normal
+- [matplotlib](https://matplotlib.org/) — criação de gráficos e visualização de dadosv
 
 ---
 
