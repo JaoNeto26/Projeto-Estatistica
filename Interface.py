@@ -10,8 +10,12 @@ from Casos.caso1 import TesteZDuasMedias
 from Casos.caso2 import TesteTPooled
 from Casos.caso3 import TesteTWelch
 from Casos.caso4 import TesteZDuasProporcoes
-from Exercicios import PaginaExercicios
+try:
+    from Exercicios import PaginaExercicios
+except Exception:
+    PaginaExercicios = None
 import math
+import threading
 import tkinter as tk
 from tkinter import ttk, messagebox
 import numpy as np
@@ -70,6 +74,241 @@ DADOS_PADRAO = {
 # ══════════════════════════════════════════════════════════════════
 #  JANELA PRINCIPAL
 # ══════════════════════════════════════════════════════════════════
+
+
+# ══════════════════════════════════════════════════════════════════
+#  SIMULAÇÃO MONTE CARLO — CCO e Histograma
+#  Funções standalone reutilizadas por Interface.py e Exercicios.py
+# ══════════════════════════════════════════════════════════════════
+
+def _rodar_um_teste(r: dict, media1, media2):
+    """Executa um único teste com médias simuladas, retorna (rejeita, estatistica)."""
+    tp   = r["tipo"]
+    bil  = r["bilateral"]
+    al   = r["alpha"]
+    g    = r["grupos"]
+    n1   = int(round(g["centros"][0]))   # usamos centros como proxy; reconstruímos abaixo
+    # reconstrução a partir dos extras do dict
+    # Para Z médias
+    if "Erro-padrão" in r.get("extras", {}) and tp == "Z" and "p̂" not in r.get("extras", {}):
+        ep    = float(r["extras"]["Erro-padrão"])
+        z     = (media1 - media2) / ep
+        from scipy import stats as _st
+        ar    = al/2 if bil else al
+        zc    = _st.norm.ppf(1 - ar)
+        pv    = 2*(1-_st.norm.cdf(abs(z))) if bil else 1-_st.norm.cdf(z)
+        rej   = abs(z) > zc if bil else z > zc
+        return rej, z
+    # Para t pooled / Welch — usamos Sp ou v1/v2 armazenados
+    if tp == "t":
+        from scipy import stats as _st
+        import math as _m
+        s1 = g["dispersoes"][0]; s2 = g["dispersoes"][1]
+        n1v = g.get("n1", 30); n2v = g.get("n2", 35)
+        if "Sp" in r.get("extras", {}):   # pooled
+            sp  = float(r["extras"]["Sp"])
+            gl  = int(r.get("gl", n1v+n2v-2))
+            t   = (media1 - media2) / (sp * _m.sqrt(1/n1v + 1/n2v))
+            ar  = al/2 if bil else al
+            tc  = _st.t.ppf(1-ar, df=gl)
+            rej = abs(t) > tc if bil else t > tc
+            return rej, t
+        else:   # Welch
+            v1  = s1**2/n1v; v2 = s2**2/n2v
+            t   = (media1 - media2) / _m.sqrt(v1+v2)
+            gl  = (v1+v2)**2/(v1**2/(n1v-1)+v2**2/(n2v-1))
+            ar  = al/2 if bil else al
+            tc  = _st.t.ppf(1-ar, df=gl)
+            rej = abs(t) > tc if bil else t > tc
+            return rej, t
+    return False, 0.0
+
+
+def _monte_carlo(r: dict, n_sim: int = 800) -> dict:
+    """
+    Estima β (Erro Tipo II) por simulação Monte Carlo e coleta
+    estatísticas sob H₀ para o histograma.
+
+    Retorna dict com chaves:
+        efeitos, betas, poderes, stats_h0, alpha, crit, tipo, bilateral
+    """
+    import math as _m
+    import numpy as _np
+    from scipy import stats as _st
+
+    g      = r["grupos"]
+    al     = r["alpha"]
+    tp     = r["tipo"]
+    bil    = r["bilateral"]
+    modo   = g["modo"]
+
+    # ── Parâmetros base ──────────────────────────────────────────
+    if modo in ("medias", "proporcoes_uma"):
+        c1, c2 = g["centros"]
+        d1, d2 = g["dispersoes"]
+        # Tamanhos amostrais: inferidos dos extras ou default
+        n1 = int(r.get("extras", {}).get("n1", 30))
+        n2 = int(r.get("extras", {}).get("n2", 35))
+        # tenta recuperar n1/n2 de chaves diretas salvas no dict
+        n1 = g.get("n1", n1); n2 = g.get("n2", n2)
+    else:
+        c1, c2 = g["centros"]
+        d1, d2 = g["dispersoes"]
+        n1 = n2 = 100   # proporções: usamos n grande por default
+
+    # Amplitude dos efeitos: de 0 até 3× o desvio do primeiro grupo
+    amp     = max(abs(c1 - c2) * 3, d1 * 2, 0.5)
+    efeitos = _np.linspace(0, amp, 12)
+
+    betas      = []
+    stats_h0   = []   # estatísticas sob H₀ (efeito = 0)
+
+    ar   = al/2 if bil else al
+    if tp == "Z":
+        crit = _st.norm.ppf(1 - ar)
+    else:
+        gl   = r.get("gl", n1+n2-2)
+        crit = _st.t.ppf(1 - ar, df=gl)
+
+    for efeito in efeitos:
+        nao_rej = 0
+        for _ in range(n_sim):
+            if modo == "proporcoes":
+                # proporções: simulação binomial
+                p1 = c1; p2 = c1 + efeito / 10   # efeito em escala proporcional
+                x1 = _np.random.binomial(n1, max(0.01, min(0.99, p1)))
+                x2 = _np.random.binomial(n2, max(0.01, min(0.99, p2)))
+                ph1 = x1/n1; ph2 = x2/n2
+                pp  = (x1+x2)/(n1+n2)
+                ep  = _m.sqrt(pp*(1-pp)*(1/n1+1/n2)) if pp not in (0,1) else 1e-9
+                z   = (ph1-ph2)/ep
+                est = z
+            else:
+                # médias: simulação normal
+                m1 = _np.random.normal(c1, d1, n1).mean()
+                m2 = _np.random.normal(c2 + efeito, d2, n2).mean()
+                if tp == "Z":
+                    ep  = _m.sqrt(d1**2/n1 + d2**2/n2)
+                    est = (m1-m2)/ep
+                elif "Sp" in r.get("extras", {}):   # pooled
+                    sp  = float(r["extras"]["Sp"])
+                    est = (m1-m2)/(sp*_m.sqrt(1/n1+1/n2))
+                else:                                # Welch
+                    v1  = d1**2/n1; v2 = d2**2/n2
+                    est = (m1-m2)/_m.sqrt(v1+v2)
+
+            rej = abs(est) > crit if bil else est > crit
+            if not rej:
+                nao_rej += 1
+            if efeito == 0:
+                stats_h0.append(est)
+
+        betas.append(nao_rej / n_sim)
+
+    return dict(
+        efeitos=efeitos,
+        betas=_np.array(betas),
+        poderes=1 - _np.array(betas),
+        stats_h0=_np.array(stats_h0),
+        alpha=al,
+        crit=crit,
+        tipo=tp,
+        bilateral=bil,
+    )
+
+
+def _desenhar_cco(ax, mc: dict, r: dict):
+    """Plota a Curva Característica de Operação (β vs efeito)."""
+    import numpy as _np
+
+    efeitos = mc["efeitos"]
+    betas   = mc["betas"]
+    poderes = mc["poderes"]
+    al      = mc["alpha"]
+
+    # Linha β
+    ax.plot(efeitos, betas,   color=COR_VERMELHO, lw=1.8, marker="o",
+            markersize=4, label="β (Erro Tipo II)")
+    # Linha poder
+    ax.plot(efeitos, poderes, color=COR_VERDE, lw=1.5, ls="--", marker="s",
+            markersize=3, label="Poder (1−β)")
+    # Linhas de referência
+    ax.axhline(al,  color=COR_AMARELO, lw=1.0, ls=":", label=f"α = {al}")
+    ax.axhline(0.8, color=COR_DESTAQUE, lw=0.8, ls=":", label="Poder = 0,80")
+
+    # Ponto atual (efeito real = diferença entre grupos)
+    delta_real = abs(r["grupos"]["centros"][0] - r["grupos"]["centros"][1])
+    if efeitos[0] <= delta_real <= efeitos[-1]:
+        beta_interp = _np.interp(delta_real, efeitos, betas)
+        ax.axvline(delta_real, color=COR_TEXTO_DIM, lw=1.0, ls="--")
+        ax.scatter([delta_real], [beta_interp], color=COR_AMARELO,
+                   zorder=5, s=40)
+        ax.annotate(f"β≈{beta_interp:.2f}", xy=(delta_real, beta_interp),
+                    xytext=(6, 6), textcoords="offset points",
+                    color=COR_AMARELO, fontsize=7.5)
+
+    ax.set_ylim(-0.05, 1.05)
+    ax.set_title("CCO — Curva Característica de Operação",
+                 color=COR_TEXTO, fontsize=9)
+    ax.set_xlabel("Efeito (diferença real)", color=COR_TEXTO_DIM, fontsize=8)
+    ax.set_ylabel("β / Poder", color=COR_TEXTO_DIM, fontsize=8)
+    ax.legend(fontsize=7, facecolor=COR_CARD, edgecolor=COR_BORDA,
+              labelcolor=COR_TEXTO, loc="center right")
+    ax.grid(alpha=0.15, color=COR_BORDA)
+
+
+def _desenhar_hist(ax, mc: dict, r: dict):
+    """Plota histograma das estatísticas simuladas sob H₀."""
+    import numpy as _np
+    from scipy import stats as _st
+
+    zs   = mc["stats_h0"]
+    tp   = mc["tipo"]
+    crit = mc["crit"]
+    bil  = mc["bilateral"]
+    al   = mc["alpha"]
+    gl   = r.get("gl", None)
+
+    if len(zs) == 0:
+        return
+
+    # Histograma
+    ax.hist(zs, bins=28, density=True, color=COR_DESTAQUE,
+            alpha=0.55, edgecolor=COR_FUNDO, linewidth=0.4,
+            label="Sim. sob H₀")
+
+    # Curva teórica sobreposta
+    lim = max(4.0, abs(zs).max() * 1.1)
+    xs  = _np.linspace(-lim, lim, 400)
+    ys  = _st.t.pdf(xs, df=gl) if tp == "t" else _st.norm.pdf(xs)
+    ax.plot(xs, ys, color=COR_ROXO, lw=1.6, label=f"{'t' if tp=='t' else 'Z'} teórico")
+
+    # Regiões críticas
+    ax.fill_between(xs, ys, where=(xs >= crit),  color=COR_VERMELHO, alpha=0.30)
+    if bil:
+        ax.fill_between(xs, ys, where=(xs <= -crit), color=COR_VERMELHO, alpha=0.30)
+
+    # Linhas críticas
+    ax.axvline( crit, color=COR_VERMELHO, lw=1.2, ls=":", label=f"±crit={crit:.2f}")
+    if bil:
+        ax.axvline(-crit, color=COR_VERMELHO, lw=1.2, ls=":")
+
+    # Taxa de rejeição empírica
+    rej_emp = ((_np.abs(zs) > crit) if bil else (zs > crit)).mean()
+    ax.annotate(f"Rejeição H₀: {rej_emp:.1%}\n(esperado ≈ {al:.0%})",
+                xy=(0.97, 0.93), xycoords="axes fraction", ha="right",
+                color=COR_AMARELO, fontsize=7.5,
+                bbox=dict(boxstyle="round,pad=0.3", fc=COR_CARD,
+                          ec=COR_BORDA, lw=0.8))
+
+    ax.set_title(f"Histograma de {tp} sob H₀ (Monte Carlo)",
+                 color=COR_TEXTO, fontsize=9)
+    ax.set_xlabel(f"Estatística {tp}", color=COR_TEXTO_DIM, fontsize=8)
+    ax.set_ylabel("Densidade", color=COR_TEXTO_DIM, fontsize=8)
+    ax.legend(fontsize=7, facecolor=COR_CARD, edgecolor=COR_BORDA,
+              labelcolor=COR_TEXTO, loc="upper right")
+    ax.grid(alpha=0.15, color=COR_BORDA)
+
 
 class App(tk.Tk):
 
@@ -312,10 +551,12 @@ class App(tk.Tk):
     def _painel_grafico(self, pai):
         frame = ttk.LabelFrame(pai, text=" 📈  Visualização ", padding=6)
 
-        self.fig, self.axes = plt.subplots(1, 2, figsize=(10, 3.2),
-                                            facecolor=COR_FUNDO)
-        self.fig.subplots_adjust(left=0.07, right=0.97, bottom=0.14,
-                                  top=0.88, wspace=0.32)
+        self.fig, self.axes_arr = plt.subplots(2, 2, figsize=(11, 6.4),
+                                                    facecolor=COR_FUNDO)
+        self.fig.subplots_adjust(left=0.07, right=0.97, bottom=0.10,
+                                  top=0.93, wspace=0.32, hspace=0.52)
+        # axes_arr[linha][col] → flatten para acesso por índice
+        self.axes = self.axes_arr.flatten()   # [0]=dist [1]=grupos [2]=CCO [3]=hist
         for ax in self.axes:
             ax.set_facecolor(COR_PAINEL)
             ax.tick_params(colors=COR_TEXTO_DIM, labelsize=8)
@@ -324,6 +565,8 @@ class App(tk.Tk):
 
         self.canvas = FigureCanvasTkAgg(self.fig, master=frame)
         self.canvas.get_tk_widget().pack(fill="both", expand=True)
+        # Estado Monte Carlo
+        self._mc_rodando = False
         return frame
 
     # ── Troca de teste ────────────────────────────────────────────
@@ -482,11 +725,16 @@ class App(tk.Tk):
 
         self._grafico_distribuicao(self.axes[0], r)
         self._grafico_grupos(self.axes[1], r)
+        self._grafico_placeholder_mc(self.axes[2], "Calculando CCO...")
+        self._grafico_placeholder_mc(self.axes[3], "Calculando Histograma...")
         self.fig.suptitle(
             self.var_teste.get(),
             color=COR_TEXTO_DIM, fontsize=9, y=0.98,
         )
         self.canvas.draw()
+        # Inicia Monte Carlo em thread separada
+        self._res_atual = r
+        self._iniciar_monte_carlo(r)
 
     def _grafico_distribuicao(self, ax, r: dict):
         tp   = r["tipo"]
@@ -579,10 +827,54 @@ class App(tk.Tk):
             spine.set_linewidth(1.5)
 
 
-    # ── Abre página de exercícios ─────────────────────────────────
-    def _abrir_exercicios(self):
-        PaginaExercicios(self)
 
+    # ── Placeholder enquanto MC roda ──────────────────────────────
+    def _grafico_placeholder_mc(self, ax, msg):
+        ax.text(0.5, 0.5, msg, ha="center", va="center",
+                color=COR_TEXTO_DIM, fontsize=9, transform=ax.transAxes,
+                style="italic")
+        ax.set_xticks([]); ax.set_yticks([])
+
+    # ── Monte Carlo em thread ─────────────────────────────────────
+    def _iniciar_monte_carlo(self, r: dict):
+        if self._mc_rodando:
+            return
+        self._mc_rodando = True
+        t = threading.Thread(target=self._rodar_mc, args=(r,), daemon=True)
+        t.start()
+
+    def _rodar_mc(self, r: dict):
+        """Roda simulação Monte Carlo e agenda atualização na thread da UI."""
+        try:
+            resultado = _monte_carlo(r, n_sim=800)
+            # agenda no loop principal do Tkinter
+            self.after(0, lambda: self._aplicar_mc(r, resultado))
+        except Exception:
+            pass
+        finally:
+            self._mc_rodando = False
+
+    def _aplicar_mc(self, r: dict, mc: dict):
+        """Chamado na thread principal após MC terminar."""
+        # Verifica se o resultado ainda é o atual (usuário pode ter trocado)
+        if r is not getattr(self, "_res_atual", None):
+            return
+        for ax in [self.axes[2], self.axes[3]]:
+            ax.clear()
+            ax.set_facecolor(COR_PAINEL)
+            ax.tick_params(colors=COR_TEXTO_DIM, labelsize=8)
+            for spine in ax.spines.values():
+                spine.set_edgecolor(COR_BORDA)
+        _desenhar_cco(self.axes[2],  mc, r)
+        _desenhar_hist(self.axes[3], mc, r)
+        self.canvas.draw()
+
+    def _abrir_exercicios(self):
+        if PaginaExercicios:
+            PaginaExercicios(self)
+        else:
+            from tkinter import messagebox
+            messagebox.showerror("Erro", "Exercicios.py não encontrado na pasta do projeto.")
 
 # ══════════════════════════════════════════════════════════════════
 #  ENTRY POINT

@@ -15,7 +15,7 @@ de Casos/ sem alterá-las.
 Execução standalone:  python Exercicios.py
 """
 
-import math, sys, tkinter as tk
+import math, sys, threading, tkinter as tk
 from tkinter import ttk
 import numpy as np
 import matplotlib.pyplot as plt
@@ -24,12 +24,14 @@ from scipy import stats
 
 # ── imports do projeto ────────────────────────────────────────────
 try:
+    from Interface import _monte_carlo, _desenhar_cco, _desenhar_hist
     from Casos.caso1 import TesteZDuasMedias
     from Casos.caso2 import TesteTPooled
     from Casos.caso3 import TesteTWelch
     from Casos.caso4 import TesteZDuasProporcoes
 except ModuleNotFoundError:
     sys.path.insert(0, ".")
+    from Interface import _monte_carlo, _desenhar_cco, _desenhar_hist
     from Casos.caso1 import TesteZDuasMedias
     from Casos.caso2 import TesteTPooled
     from Casos.caso3 import TesteTWelch
@@ -909,8 +911,10 @@ class PaginaExercicios(tk.Toplevel):
         frame = ttk.LabelFrame(pai, text=" 📈  Visualização ", padding=6)
         frame.grid(row=1, column=0, columnspan=2, sticky="nsew")
 
-        self.fig, self.axes = plt.subplots(1, 2, figsize=(12, 3.4), facecolor=COR_FUNDO)
-        self.fig.subplots_adjust(left=0.07, right=0.97, bottom=0.15, top=0.87, wspace=0.30)
+        self.fig, self.axes_arr = plt.subplots(2, 2, figsize=(12, 6.8), facecolor=COR_FUNDO)
+        self.axes = self.axes_arr.flatten()   # [0]=dist [1]=grupos [2]=CCO [3]=hist
+        self.fig.subplots_adjust(left=0.07, right=0.97, bottom=0.08,
+                                  top=0.94, wspace=0.32, hspace=0.52)
         for ax in self.axes:
             ax.set_facecolor(COR_PAINEL)
             ax.tick_params(colors=COR_TEXTO_DIM, labelsize=8)
@@ -918,13 +922,21 @@ class PaginaExercicios(tk.Toplevel):
 
         self.canvas_fig = FigureCanvasTkAgg(self.fig, master=frame)
         self.canvas_fig.get_tk_widget().pack(fill="both", expand=True)
+        self._mc_rodando = False
 
     def _placeholder(self):
-        for ax in self.axes:
+        msgs = [
+            "Selecione um exercício →",
+            "Gráfico de grupos",
+            "CCO aparecerá aqui",
+            "Histograma aparecerá aqui",
+        ]
+        for ax, msg in zip(self.axes, msgs):
             ax.clear(); ax.set_facecolor(COR_PAINEL)
-            ax.text(0.5, 0.5, "Selecione um exercício na lista lateral →",
-                    ha="center", va="center", color=COR_TEXTO_DIM,
-                    fontsize=10, transform=ax.transAxes)
+            ax.text(0.5, 0.5, msg, ha="center", va="center",
+                    color=COR_TEXTO_DIM, fontsize=9, transform=ax.transAxes,
+                    style="italic")
+            ax.set_xticks([]); ax.set_yticks([])
             for sp in ax.spines.values(): sp.set_edgecolor(COR_BORDA)
         self.canvas_fig.draw()
 
@@ -997,6 +1009,39 @@ class PaginaExercicios(tk.Toplevel):
         else:
             self._graf_dist(self.axes[0], r)
         self._graf_grupos(self.axes[1], r)
+        # CCO e Histograma — placeholder até MC terminar
+        for ax, msg in [(self.axes[2], "Calculando CCO..."),
+                        (self.axes[3], "Calculando Histograma...")]:
+            ax.text(0.5, 0.5, msg, ha="center", va="center",
+                    color=COR_TEXTO_DIM, fontsize=9, transform=ax.transAxes,
+                    style="italic")
+            ax.set_xticks([]); ax.set_yticks([])
+        self.fig.suptitle(titulo, color=COR_TEXTO_DIM, fontsize=9, y=0.99)
+        self.canvas_fig.draw()
+        # Inicia Monte Carlo em thread
+        self._res_mc = r
+        if not self._mc_rodando:
+            self._mc_rodando = True
+            threading.Thread(target=self._rodar_mc, args=(r, titulo), daemon=True).start()
+
+    def _rodar_mc(self, r, titulo):
+        try:
+            mc = _monte_carlo(r, n_sim=600)
+            self.after(0, lambda: self._aplicar_mc(r, mc, titulo))
+        except Exception:
+            pass
+        finally:
+            self._mc_rodando = False
+
+    def _aplicar_mc(self, r, mc, titulo):
+        if r is not getattr(self, "_res_mc", None):
+            return
+        for ax in [self.axes[2], self.axes[3]]:
+            ax.clear(); ax.set_facecolor(COR_PAINEL)
+            ax.tick_params(colors=COR_TEXTO_DIM, labelsize=8)
+            for sp in ax.spines.values(): sp.set_edgecolor(COR_BORDA)
+        _desenhar_cco(self.axes[2],  mc, r)
+        _desenhar_hist(self.axes[3], mc, r)
         self.fig.suptitle(titulo, color=COR_TEXTO_DIM, fontsize=9, y=0.99)
         self.canvas_fig.draw()
 
