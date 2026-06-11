@@ -185,8 +185,14 @@ def _monte_carlo(r: dict, n_sim: int = 800) -> dict:
                 est = z
             else:
                 # médias: simulação normal
-                m1 = _np.random.normal(c1, d1, n1).mean()
-                m2 = _np.random.normal(c2 + efeito, d2, n2).mean()
+                if efeito == 0:
+                    mu_ref = (c1 + c2) / 2
+
+                    m1 = np.random.normal(mu_ref, d1, n1).mean()
+                    m2 = np.random.normal(mu_ref, d2, n2).mean()
+                else:
+                    m1 = np.random.normal(c1, d1, n1).mean()
+                    m2 = np.random.normal(c1 + efeito, d2, n2).mean()
                 if tp == "Z":
                     ep  = _m.sqrt(d1**2/n1 + d2**2/n2)
                     est = (m1-m2)/ep
